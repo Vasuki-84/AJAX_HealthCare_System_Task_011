@@ -2,9 +2,9 @@
 require_once 'config.php';
 
 $users = [
-    ['username' => 'admin', 'password' => 'admin123'],
-    ['username' => 'doctor1', 'password' => 'doctor123'],
-    ['username' => 'nurse1', 'password' => 'nurse123'],
+    ['username' => 'user1', 'password' => 'user123'],
+    ['username' => 'user2', 'password' => 'user123'],
+    ['username' => 'user3', 'password' => 'user123'],
     
 ];
 
