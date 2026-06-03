@@ -4,6 +4,15 @@ require_once 'config.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+// Auto-update database schema if needed
+try {
+    $conn->query("SELECT doctor_name FROM appointments LIMIT 1");
+} catch (Exception $e) {
+    if (strpos($e->getMessage(), "Unknown column 'doctor_name'") !== false) {
+        $conn->query("ALTER TABLE appointments ADD COLUMN doctor_name VARCHAR(100) AFTER patient_name");
+    }
+}
+
 
 // API handles patient CRUD operations
 switch ($method) {

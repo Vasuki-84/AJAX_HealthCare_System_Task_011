@@ -115,14 +115,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.querySelectorAll('.edit-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const data = e.target.dataset;
+                const data = e.currentTarget.dataset;
                 populateForm(data);
             });
         });
 
         document.querySelectorAll('.delete-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const id = e.target.dataset.id;
+                const id = e.currentTarget.dataset.id;
                 if (confirm('Are you sure you want to delete this appointment?')) {
                     deleteAppointment(id);
                 }
@@ -182,7 +182,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('appointmentTime').value = data.appointment_time;
         
         submitBtn.textContent = 'Update Appointment';
-        submitBtn.classList.replace('btn-primary', 'btn-success');
+        submitBtn.classList.remove('btn-primary');
+        submitBtn.classList.add('btn-success');
         cancelEditBtn.classList.remove('d-none');
     }
 
@@ -190,7 +191,8 @@ document.addEventListener('DOMContentLoaded', () => {
         appointmentForm.reset();
         document.getElementById('appointmentId').value = '';
         submitBtn.textContent = 'Book Appointment';
-        submitBtn.classList.replace('btn-success', 'btn-primary');
+        submitBtn.classList.remove('btn-success');
+        submitBtn.classList.add('btn-primary');
         cancelEditBtn.classList.add('d-none');
     }
 
