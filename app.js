@@ -53,11 +53,16 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadAppointments() {
         try {
             const response = await fetch('api.php');
-            const appointments = await response.json();
-            renderTable(appointments);
-            if (lastUpdatedId) {
-                highlightRow(lastUpdatedId);
-                lastUpdatedId = null;
+            const result = await response.json();
+            
+            if (Array.isArray(result)) {
+                renderTable(result);
+                if (lastUpdatedId) {
+                    highlightRow(lastUpdatedId);
+                    lastUpdatedId = null;
+                }
+            } else if (result.status === 'error') {
+                showMessage('Error loading appointments: ' + result.message, 'danger');
             }
         } catch (error) {
             console.error('Error loading appointments:', error);
@@ -67,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTable(appointments) {
         appointmentTableBody.innerHTML = '';
-        if (appointments.length === 0) {
+        if (!Array.isArray(appointments) || appointments.length === 0) {
             appointmentTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No appointments found.</td></tr>';
             return;
         }
