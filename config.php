@@ -1,36 +1,24 @@
 <?php
-// Store the required values for database connection
-$host = "localhost";
-$user = "root";
-$pass = "";
-$dbname = "clinic_db";
-$port = 3308; 
+// config.php - Database Connection
 
-// Set mysqli to throw exceptions when errors occur in MYSQL operations, which allows us to catch them and return JSON responses without this it shows only warning
-mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+define('DB_HOST', 'localhost');
+define('DB_USER', 'root');       // Change to your MySQL username
+define('DB_PASS', '');           // Change to your MySQL password
+define('DB_NAME', 'clinic_db');
 
+$conn = mysqli_connect(DB_HOST, DB_USER, DB_PASS, DB_NAME, 3308);
 
-function get_connection($host, $user, $pass, $dbname, $port) {
-    try {
-        // Try connecting to the server first (without database name)
-        $temp_conn = new mysqli($host, $user, $pass, null, $port);
-        $temp_conn->query("CREATE DATABASE IF NOT EXISTS $dbname");
-        $temp_conn->close();
-
-        // Now connect to the database
-        return new mysqli($host, $user, $pass, $dbname, $port);
-    } catch (mysqli_sql_exception $e) {
-        throw $e;
-    }
+// Handle connection errors
+if (!$conn) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+    echo json_encode([
+        'success' => false,
+        'message' => 'Database connection failed: ' . mysqli_connect_error()
+    ]);
+    exit();
 }
 
-try {
-    $conn = get_connection($host, $user, $pass, $dbname, 3308);
-} catch (mysqli_sql_exception $e) {
-    try {
-        $conn = get_connection($host, $user, $pass, $dbname, 3306);
-    } catch (mysqli_sql_exception $e2) {
-        header("Content-Type: application/json");
-        die(json_encode(["status" => "error", "message" => "Database Connection Failed: " . $e2->getMessage()]));
-    }
-}
+// Set charset to UTF-8
+mysqli_set_charset($conn, 'utf8mb4');
+?>

@@ -1,228 +1,269 @@
 <?php
-header("Content-Type: application/json");
+// api.php — Handles GET, POST, PUT, PATCH, DELETE for appointments
+
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+// Handle preflight OPTIONS request
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
 require_once 'config.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 
-// Auto-update database schema if needed
-try {
-    // Check if table exists
-    $result = $conn->query("SHOW TABLES LIKE 'appointments'");
-    if ($result->num_rows == 0) {
-        // Create table if missing
-        $conn->query("CREATE TABLE appointments (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            patient_name VARCHAR(100) NOT NULL,
-            doctor_name VARCHAR(100) NOT NULL,
-            email VARCHAR(100) NOT NULL,
-            mobile VARCHAR(20) NOT NULL,
-            appointment_date DATE NOT NULL,
-            appointment_time TIME NOT NULL,
-            status ENUM('Pending', 'Confirmed', 'Cancelled') DEFAULT 'Pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )");
-    } else {
-        // Check for missing doctor_name column
-        $conn->query("SELECT doctor_name FROM appointments LIMIT 1");
-    }
-} catch (Exception $e) {
-    if (strpos($e->getMessage(), "Unknown column 'doctor_name'") !== false) {
-        $conn->query("ALTER TABLE appointments ADD COLUMN doctor_name VARCHAR(100) AFTER patient_name");
-    }
+// Read raw JSON input (used by POST, PUT, PATCH, DELETE)
+$input = json_decode(file_get_contents('php://input'), true);
+
+switch ($method) {
+
+    // ─────────────────────────────────────────
+    // GET — Fetch all appointments
+    // ─────────────────────────────────────────
+    case 'GET':
+        $sql    = "SELECT * FROM appointments ORDER BY appointment_date ASC, appointment_time ASC";
+        $result = mysqli_query($conn, $sql);
+
+        if (!$result) {
+            respond(false, 'Database error: ' . mysqli_error($conn), null, 500);
+        }
+
+        $appointments = [];
+        while ($row = mysqli_fetch_assoc($result)) {
+            $appointments[] = $row;
+        }
+
+        respond(true, 'Appointments fetched successfully', $appointments, 200);
+        break;
+
+    // ─────────────────────────────────────────
+    // POST — Create a new appointment
+    // ─────────────────────────────────────────
+    case 'POST':
+        $errors = validateInput($input);
+        if (!empty($errors)) {
+            respond(false, implode(' | ', $errors), null, 422);
+        }
+
+        $name   = trim($input['patient_name']);
+        $email  = trim($input['email']);
+        $mobile = trim($input['mobile']);
+        $date   = trim($input['appointment_date']);
+        $time   = trim($input['appointment_time']);
+        $status = 'Pending';
+
+        $stmt = mysqli_prepare($conn,
+            "INSERT INTO appointments (patient_name, email, mobile, appointment_date, appointment_time, status)
+             VALUES (?, ?, ?, ?, ?, ?)"
+        );
+
+        if (!$stmt) {
+            respond(false, 'Prepare error: ' . mysqli_error($conn), null, 500);
+        }
+
+        mysqli_stmt_bind_param($stmt, 'ssssss', $name, $email, $mobile, $date, $time, $status);
+
+        if (mysqli_stmt_execute($stmt)) {
+            $newId = mysqli_insert_id($conn);
+            mysqli_stmt_close($stmt);
+            // FIX: return 200 (not 201) so fetch wrapper does not throw
+            respond(true, 'Appointment created successfully', ['id' => $newId], 200);
+        } else {
+            $err = mysqli_stmt_error($stmt);
+            mysqli_stmt_close($stmt);
+            respond(false, 'Execute error: ' . $err, null, 500);
+        }
+        break;
+
+    // ─────────────────────────────────────────
+    // PUT — Update an existing appointment
+    // ─────────────────────────────────────────
+    case 'PUT':
+        if (empty($input['id']) || !is_numeric($input['id'])) {
+            respond(false, 'Invalid input: Appointment ID is required', null, 400);
+        }
+
+        $errors = validateInput($input);
+        if (!empty($errors)) {
+            respond(false, implode(' | ', $errors), null, 422);
+        }
+
+        $id     = (int) $input['id'];
+        $name   = trim($input['patient_name']);
+        $email  = trim($input['email']);
+        $mobile = trim($input['mobile']);
+        $date   = trim($input['appointment_date']);
+        $time   = trim($input['appointment_time']);
+        // Accept status sent from JS; default to Pending
+        $allowed = ['Pending', 'Confirmed', 'Cancelled'];
+        $status  = (isset($input['status']) && in_array($input['status'], $allowed))
+                   ? $input['status'] : 'Pending';
+
+        if (!appointmentExists($conn, $id)) {
+            respond(false, 'Appointment not found', null, 404);
+        }
+
+        $stmt = mysqli_prepare($conn,
+            "UPDATE appointments
+             SET patient_name=?, email=?, mobile=?, appointment_date=?, appointment_time=?, status=?
+             WHERE id=?"
+        );
+
+        if (!$stmt) {
+            respond(false, 'Prepare error: ' . mysqli_error($conn), null, 500);
+        }
+
+        mysqli_stmt_bind_param($stmt, 'ssssssi', $name, $email, $mobile, $date, $time, $status, $id);
+
+        if (mysqli_stmt_execute($stmt)) {
+            mysqli_stmt_close($stmt);
+            respond(true, 'Appointment updated successfully', null, 200);
+        } else {
+            $err = mysqli_stmt_error($stmt);
+            mysqli_stmt_close($stmt);
+            respond(false, 'Execute error: ' . $err, null, 500);
+        }
+        break;
+
+    // ─────────────────────────────────────────
+    // PATCH — Update status only
+    // ─────────────────────────────────────────
+    case 'PATCH':
+        if (empty($input['id']) || !is_numeric($input['id'])) {
+            respond(false, 'Invalid input: Appointment ID is required', null, 400);
+        }
+
+        $allowedStatuses = ['Pending', 'Confirmed', 'Cancelled'];
+        if (empty($input['status']) || !in_array($input['status'], $allowedStatuses)) {
+            respond(false, 'Invalid input: Status must be Pending, Confirmed, or Cancelled', null, 422);
+        }
+
+        $id     = (int) $input['id'];
+        $status = $input['status'];
+
+        if (!appointmentExists($conn, $id)) {
+            respond(false, 'Appointment not found', null, 404);
+        }
+
+        $stmt = mysqli_prepare($conn, "UPDATE appointments SET status=? WHERE id=?");
+
+        if (!$stmt) {
+            respond(false, 'Prepare error: ' . mysqli_error($conn), null, 500);
+        }
+
+        mysqli_stmt_bind_param($stmt, 'si', $status, $id);
+
+        if (mysqli_stmt_execute($stmt)) {
+            mysqli_stmt_close($stmt);
+            respond(true, 'Status updated successfully', null, 200);
+        } else {
+            $err = mysqli_stmt_error($stmt);
+            mysqli_stmt_close($stmt);
+            respond(false, 'Execute error: ' . $err, null, 500);
+        }
+        break;
+
+    // ─────────────────────────────────────────
+    // DELETE — Remove an appointment
+    // ─────────────────────────────────────────
+    case 'DELETE':
+        if (empty($input['id']) || !is_numeric($input['id'])) {
+            respond(false, 'Invalid input: Appointment ID is required', null, 400);
+        }
+
+        $id = (int) $input['id'];
+
+        if (!appointmentExists($conn, $id)) {
+            respond(false, 'Appointment not found', null, 404);
+        }
+
+        $stmt = mysqli_prepare($conn, "DELETE FROM appointments WHERE id=?");
+
+        if (!$stmt) {
+            respond(false, 'Prepare error: ' . mysqli_error($conn), null, 500);
+        }
+
+        mysqli_stmt_bind_param($stmt, 'i', $id);
+
+        if (mysqli_stmt_execute($stmt)) {
+            mysqli_stmt_close($stmt);
+            respond(true, 'Appointment deleted successfully', null, 200);
+        } else {
+            $err = mysqli_stmt_error($stmt);
+            mysqli_stmt_close($stmt);
+            respond(false, 'Execute error: ' . $err, null, 500);
+        }
+        break;
+
+    default:
+        respond(false, 'Method not allowed', null, 405);
 }
 
+mysqli_close($conn);
 
-// API handles patient CRUD operations
-try {
-    switch ($method) {
-        case 'GET':
-            handleGet($conn);
-            break;
-        case 'POST':
-            $data = json_decode(file_get_contents("php://input"), true);
-            if (isset($data['id']) && !empty($data['id'])) {
-                handleUpdate($conn, $data);
-            } else {
-                handleCreate($conn, $data);
-            }
-            break;
-        case 'PUT':
-            $data = json_decode(file_get_contents("php://input"), true);
-            if (isset($data['status_only']) && $data['status_only'] === true) {
-                handleStatusUpdate($conn, $data);
-            } else {
-                handleUpdate($conn, $data);
-            }
-            break;
-        case 'DELETE':
-            $data = json_decode(file_get_contents("php://input"), true);
-            handleDelete($conn, $data);
-            break;
-        default:
-            echo json_encode(["status" => "error", "message" => "Method not allowed"]);
-            break;
+// ─────────────────────────────────────────
+// Helper Functions
+// ─────────────────────────────────────────
+
+function respond(bool $success, string $message, $data = null, int $code = 200): void {
+    http_response_code($code);
+    $response = ['success' => $success, 'message' => $message];
+    if ($data !== null) {
+        $response['data'] = $data;
     }
-} catch (Exception $e) {
-    echo json_encode(["status" => "error", "message" => "API Error: " . $e->getMessage()]);
+    echo json_encode($response);
+    exit();
 }
 
-
-function handleGet($conn) {
-    $sql = "SELECT * FROM appointments ORDER BY id DESC";
-    $result = $conn->query($sql);
-    $appointments = [];
-    while ($row = $result->fetch_assoc()) {
-        $appointments[] = $row;
-    }
-    echo json_encode($appointments);
+function appointmentExists($conn, int $id): bool {
+    $stmt = mysqli_prepare($conn, "SELECT id FROM appointments WHERE id=?");
+    mysqli_stmt_bind_param($stmt, 'i', $id);
+    mysqli_stmt_execute($stmt);
+    mysqli_stmt_store_result($stmt);
+    $exists = mysqli_stmt_num_rows($stmt) > 0;
+    mysqli_stmt_close($stmt);
+    return $exists;
 }
 
-function handleCreate($conn, $data) {
-    $validationResult = validate($data);
-    if ($validationResult !== true) {
-        echo json_encode(["status" => "error", "message" => $validationResult]);
-        return;
+function validateInput(?array $data): array {
+    $errors = [];
+
+    if (empty($data)) {
+        return ['Invalid input: No data received'];
     }
 
-    // 1. Prevent Double Booking (Same Doctor, Date, Time)
-    $stmt = $conn->prepare("SELECT id FROM appointments WHERE doctor_name = ? AND appointment_date = ? AND appointment_time = ? AND status != 'Cancelled'");
-    $stmt->bind_param("sss", $data['doctor_name'], $data['appointment_date'], $data['appointment_time']);
-    $stmt->execute();
-    if ($stmt->get_result()->num_rows > 0) {
-        echo json_encode(["status" => "error", "message" => "This time slot is already booked for " . $data['doctor_name']]);
-        $stmt->close();
-        return;
-    }
-    $stmt->close();
-
-    // 2. Appointment Limit Per Day (e.g., 10 per day)
-    $limit = 10;
-    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM appointments WHERE appointment_date = ? AND status != 'Cancelled'");
-    $stmt->bind_param("s", $data['appointment_date']);
-    $stmt->execute();
-    $countResult = $stmt->get_result()->fetch_assoc();
-    if ($countResult['count'] >= $limit) {
-        echo json_encode(["status" => "error", "message" => "Daily appointment limit ($limit) reached for this date."]);
-        $stmt->close();
-        return;
-    }
-    $stmt->close();
-
-    $stmt = $conn->prepare("INSERT INTO appointments (patient_name, doctor_name, email, mobile, appointment_date, appointment_time) VALUES (?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("ssssss", $data['patient_name'], $data['doctor_name'], $data['email'], $data['mobile'], $data['appointment_date'], $data['appointment_time']);
-
-    if ($stmt->execute()) {
-        echo json_encode([
-            "status" => "success", 
-            "message" => "Appointment booked successfully",
-            "id" => $stmt->insert_id
-        ]);
-    } else {
-        echo json_encode(["status" => "error", "message" => "Error: " . $stmt->error]);
-    }
-    $stmt->close();
-}
-
-function handleUpdate($conn, $data) {
-    $validationResult = validate($data);
-    if ($validationResult !== true) {
-        echo json_encode(["status" => "error", "message" => $validationResult]);
-        return;
-    }
-
-    // Check for double booking excluding itself
-    $stmt = $conn->prepare("SELECT id FROM appointments WHERE doctor_name = ? AND appointment_date = ? AND appointment_time = ? AND id != ? AND status != 'Cancelled'");
-    $stmt->bind_param("sssi", $data['doctor_name'], $data['appointment_date'], $data['appointment_time'], $data['id']);
-    $stmt->execute();
-    if ($stmt->get_result()->num_rows > 0) {
-        echo json_encode(["status" => "error", "message" => "This time slot is already booked for " . $data['doctor_name']]);
-        $stmt->close();
-        return;
-    }
-    $stmt->close();
-
-    $stmt = $conn->prepare("UPDATE appointments SET patient_name = ?, doctor_name = ?, email = ?, mobile = ?, appointment_date = ?, appointment_time = ? WHERE id = ?");
-    $stmt->bind_param("ssssssi", $data['patient_name'], $data['doctor_name'], $data['email'], $data['mobile'], $data['appointment_date'], $data['appointment_time'], $data['id']);
-
-    if ($stmt->execute()) {
-        echo json_encode(["status" => "success", "message" => "Appointment updated successfully"]);
-    } else {
-        echo json_encode(["status" => "error", "message" => "Error: " . $stmt->error]);
-    }
-    $stmt->close();
-}
-
-function handleStatusUpdate($conn, $data) {
-    if (!isset($data['id']) || !isset($data['status'])) {
-        echo json_encode(["status" => "error", "message" => "Missing data"]);
-        return;
-    }
-
-    $stmt = $conn->prepare("UPDATE appointments SET status = ? WHERE id = ?");
-    $stmt->bind_param("si", $data['status'], $data['id']);
-
-    if ($stmt->execute()) {
-        echo json_encode(["status" => "success", "message" => "Status updated successfully"]);
-    } else {
-        echo json_encode(["status" => "error", "message" => "Error: " . $stmt->error]);
-    }
-    $stmt->close();
-}
-
-function handleDelete($conn, $data) {
-    if (!isset($data['id'])) {
-        echo json_encode(["status" => "error", "message" => "ID required"]);
-        return;
-    }
-
-    $stmt = $conn->prepare("DELETE FROM appointments WHERE id = ?");
-    $stmt->bind_param("i", $data['id']);
-
-    if ($stmt->execute()) {
-        echo json_encode(["status" => "success", "message" => "Appointment deleted successfully"]);
-    } else {
-        echo json_encode(["status" => "error", "message" => "Error: " . $stmt->error]);
-    }
-    $stmt->close();
-}
-
-function validate($data) {
-    if (empty($data['patient_name'])) return "Patient name is required";
-    if (empty($data['doctor_name'])) return "Doctor name is required";
-    if (empty($data['email'])) return "Email is required";
-    if (empty($data['mobile'])) return "Mobile number is required";
-    if (empty($data['appointment_date'])) return "Appointment date is required";
-    if (empty($data['appointment_time'])) return "Appointment time is required";
-
-
-    if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-        return "Invalid email format";
-    }
-
-
-    if (!preg_match('/^[0-9]{10}$/', $data['mobile'])) {
-        return "Mobile number must contain exactly 10 digits";
-    }
-
-      if ($data['appointment_date'] < date('Y-m-d')) {
-        return "Appointment date cannot be in the past";
-    }
-
-
-    // Accept 12-hour format with AM/PM, e.g., "02:30 PM"
-    $timeObj = DateTime::createFromFormat('h:i A', $data['appointment_time']);
-    if ($timeObj === false) {
-        // Fallback to 24-hour format
-        $timeObj = DateTime::createFromFormat('H:i', $data['appointment_time']);
-        if ($timeObj === false) {
-            return "Invalid appointment time format. Use HH:MM (24h) or HH:MM AM/PM (12h).";
+    $required = ['patient_name', 'email', 'mobile', 'appointment_date', 'appointment_time'];
+    foreach ($required as $field) {
+        if (!isset($data[$field]) || trim($data[$field]) === '') {
+            $label    = ucwords(str_replace('_', ' ', $field));
+            $errors[] = "$label is required";
         }
     }
-    $hour = (int) $timeObj->format('H');
-    if ($hour < 9 || $hour >= 18) {
-        return "Appointment time must be between 09:00 and 18:00";
+
+    if (!empty($errors)) return $errors;
+
+    if (!preg_match('/^[a-zA-Z\s]{2,100}$/', trim($data['patient_name']))) {
+        $errors[] = 'Patient name must be 2–100 alphabetic characters';
     }
 
+    if (!filter_var(trim($data['email']), FILTER_VALIDATE_EMAIL)) {
+        $errors[] = 'Invalid email format';
+    }
 
-    return true;
+    if (!preg_match('/^\+?[0-9]{10,15}$/', trim($data['mobile']))) {
+        $errors[] = 'Mobile number must be 10–15 digits';
+    }
+
+    $today    = new DateTime('today');
+    $apptDate = DateTime::createFromFormat('Y-m-d', trim($data['appointment_date']));
+    if (!$apptDate || $apptDate < $today) {
+        $errors[] = 'Appointment date cannot be a past date';
+    }
+
+    return $errors;
 }
+?>

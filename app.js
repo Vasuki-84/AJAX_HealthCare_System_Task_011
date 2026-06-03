@@ -1,260 +1,450 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const appointmentForm = document.getElementById('appointmentForm');
-    const appointmentTableBody = document.getElementById('appointmentTableBody');
-    const submitBtn = document.getElementById('submitBtn');
-    const cancelEditBtn = document.getElementById('cancelEditBtn');
-    const refreshBtn = document.getElementById('refreshBtn');
-    const messageContainer = document.getElementById('messageContainer');
-    let lastUpdatedId = null;
+/**
+ * app.js — AJAX Patient Appointment Management
+ * Strategy: keep a local `appointments[]` array in sync with the DB.
+ * Every CRUD operation updates the array instantly → re-renders the table
+ * immediately with NO extra GET round-trip.
+ */
 
-    // Initial Load
-    loadAppointments();
+'use strict';
 
-    // Form Submission
-    appointmentForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const formData = new FormData(appointmentForm);
-        const data = Object.fromEntries(formData.entries());
-        
-        // Basic validation on frontend as well
-        if (!validateForm(data)) return;
+const API_URL = 'api.php';
 
-        console.log('Submitting data:', data);
-        try {
-            const response = await fetch('api.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            });
-            const result = await response.json();
-            console.log('Response from API:', result);
-            
-            if (result.status === 'success') {
-                showMessage(result.message, 'success');
-                lastUpdatedId = data.id || result.id || null; // Use data.id (update) or result.id (create)
-                resetForm();
-                loadAppointments();
-            } else {
-                showMessage(result.message, 'danger');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            showMessage('An unexpected error occurred.', 'danger');
-        }
-    });
+// ── In-memory store ───────────────────────────────────────────────────
+let appointments = [];   // single source of truth for the UI
 
-    // Refresh Button
-    refreshBtn.addEventListener('click', loadAppointments);
+// ── DOM references ────────────────────────────────────────────────────
+const form             = document.getElementById('appointmentForm');
+const appointmentId    = document.getElementById('appointmentId');
+const patientName      = document.getElementById('patientName');
+const emailInput       = document.getElementById('email');
+const mobileInput      = document.getElementById('mobile');
+const appointmentDate  = document.getElementById('appointmentDate');
+const appointmentTime  = document.getElementById('appointmentTime');
+const submitBtn        = document.getElementById('submitBtn');
+const submitBtnText    = document.getElementById('submitBtnText');
+const formTitle        = document.getElementById('formTitle');
+const cancelEditBtn    = document.getElementById('cancelEditBtn');
+const appointmentsBody = document.getElementById('appointmentsBody');
+const tableWrapper     = document.getElementById('tableWrapper');
+const tableLoader      = document.getElementById('tableLoader');
+const emptyState       = document.getElementById('emptyState');
+const totalCount       = document.getElementById('totalCount');
 
-    // Cancel Edit
-    cancelEditBtn.addEventListener('click', resetForm);
+// ── Minimum date = today ──────────────────────────────────────────────
+appointmentDate.min = new Date().toISOString().split('T')[0];
 
-    async function loadAppointments() {
-        try {
-            const response = await fetch('api.php');
-            const result = await response.json();
-            console.log('Loaded appointments:', result);
-            
-            if (Array.isArray(result)) {
-                renderTable(result);
-                if (lastUpdatedId) {
-                    highlightRow(lastUpdatedId);
-                    lastUpdatedId = null;
-                }
-            } else if (result.status === 'error') {
-                showMessage('Error loading appointments: ' + result.message, 'danger');
-            }
-        } catch (error) {
-            console.error('Error loading appointments:', error);
-            showMessage('Failed to load appointments.', 'danger');
-        }
+// ── On page load: fetch once from server ─────────────────────────────
+document.addEventListener('DOMContentLoaded', loadAppointments);
+
+// ═════════════════════════════════════════════════════════════════════
+// READ — initial load from server (GET)
+// ═════════════════════════════════════════════════════════════════════
+async function loadAppointments() {
+  showLoader(true);
+  try {
+    const res = await apiRequest('GET');
+    if (res.success) {
+      appointments = res.data || [];
+      renderTable();
+    } else {
+      showAlert('danger', 'Database error: ' + res.message);
     }
+  } catch (err) {
+    showAlert('danger', 'API failure: ' + err.message);
+  } finally {
+    showLoader(false);
+  }
+}
 
-    function renderTable(appointments) {
-        appointmentTableBody.innerHTML = '';
-        if (!Array.isArray(appointments) || appointments.length === 0) {
-            appointmentTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No appointments found.</td></tr>';
-            return;
+// ═════════════════════════════════════════════════════════════════════
+// CREATE / UPDATE — form submit
+// ═════════════════════════════════════════════════════════════════════
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearValidation();
+
+  const data         = collectFormData();
+  const clientErrors = validateClient(data);
+  if (clientErrors.length > 0) { showClientErrors(clientErrors); return; }
+
+  const isUpdate = appointmentId.value !== '';
+  setBtnLoading(true, isUpdate ? 'Updating…' : 'Booking…');
+
+  try {
+    if (isUpdate) {
+      // ── UPDATE (PUT) ──────────────────────────────────────────────
+      const id        = parseInt(appointmentId.value);
+      const statusSel = document.querySelector(`#row-${id} select`);
+      data.id         = id;
+      data.status     = statusSel ? statusSel.value : 'Pending';
+
+      const res = await apiRequest('PUT', data);
+      if (res.success) {
+        // Instant DOM update: replace the record in local array
+        const idx = appointments.findIndex(a => a.id === id);
+        if (idx !== -1) {
+          appointments[idx] = {
+            ...appointments[idx],   // keep created_at
+            patient_name     : data.patient_name,
+            email            : data.email,
+            mobile           : data.mobile,
+            appointment_date : data.appointment_date,
+            appointment_time : data.appointment_time,
+            status           : data.status
+          };
         }
+        renderTable();
+        highlightRow(id);
+        showAlert('success', 'Appointment updated successfully!');
+        resetForm();
+      } else {
+        showAlert('danger', res.message || 'Update failed.');
+      }
 
-        appointments.forEach(app => {
-            const tr = document.createElement('tr');
-            tr.id = `row-${app.id}`;
-            tr.innerHTML = `
-                <td><strong>#${app.id}</strong></td>
-                <td>${app.patient_name}</td>
-                <td><span class="badge bg-light text-dark border">${app.doctor_name || 'N/A'}</span></td>
-                <td>${app.email}</td>
-                <td>${app.mobile}</td>
-                <td>${app.appointment_date}</td>
-                <td>${app.appointment_time}</td>
-                <td>
-                    <select class="form-select form-select-sm status-dropdown" data-id="${app.id}">
-                        <option value="Pending" ${app.status === 'Pending' ? 'selected' : ''}>Pending</option>
-                        <option value="Confirmed" ${app.status === 'Confirmed' ? 'selected' : ''}>Confirmed</option>
-                        <option value="Cancelled" ${app.status === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
-                    </select>
-                </td>
-                <td>
-                    <div class="btn-group">
-                        <button class="btn btn-sm btn-outline-info edit-btn" data-id="${app.id}" data-patient_name="${app.patient_name}" data-doctor_name="${app.doctor_name}" data-email="${app.email}" data-mobile="${app.mobile}" data-appointment_date="${app.appointment_date}" data-appointment_time="${app.appointment_time}">
-                            <i class="bi bi-pencil-square"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${app.id}">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                </td>
-            `;
-            appointmentTableBody.appendChild(tr);
-        });
-
-        // Add event listeners for dynamic elements
-        document.querySelectorAll('.status-dropdown').forEach(select => {
-            select.addEventListener('change', async (e) => {
-                const id = e.target.dataset.id;
-                const status = e.target.value;
-                updateStatus(id, status);
-            });
-        });
-
-        document.querySelectorAll('.edit-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const data = e.currentTarget.dataset;
-                populateForm(data);
-            });
-        });
-
-        document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const id = e.currentTarget.dataset.id;
-                if (confirm('Are you sure you want to delete this appointment?')) {
-                    deleteAppointment(id);
-                }
-            });
-        });
+    } else {
+      // ── CREATE (POST) ─────────────────────────────────────────────
+      const res = await apiRequest('POST', data);
+      if (res.success) {
+        // Build the new record object with the DB-assigned id
+        const newAppt = {
+          id               : res.data.id,
+          patient_name     : data.patient_name,
+          email            : data.email,
+          mobile           : data.mobile,
+          appointment_date : data.appointment_date,
+          appointment_time : data.appointment_time,
+          status           : 'Pending',
+          created_at       : new Date().toISOString()
+        };
+        // Instant DOM update: push to local array
+        appointments.push(newAppt);
+        renderTable();
+        highlightRow(newAppt.id);
+        showAlert('success', 'Appointment booked successfully!');
+        resetForm();
+      } else {
+        showAlert('danger', res.message || 'Booking failed.');
+      }
     }
-
-    async function updateStatus(id, status) {
-        try {
-            const response = await fetch('api.php', {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ id, status, status_only: true })
-            });
-            const result = await response.json();
-            if (result.status === 'success') {
-                highlightRow(id);
-            } else {
-                showMessage('Error updating status: ' + result.message, 'danger');
-                loadAppointments(); 
-            }
-        } catch (error) {
-            console.error('Error:', error);
-        }
-    }
-
-    async function deleteAppointment(id) {
-        try {
-            const response = await fetch('api.php', {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ id })
-            });
-            const result = await response.json();
-            if (result.status === 'success') {
-                showMessage('Appointment deleted successfully', 'success');
-                loadAppointments();
-            } else {
-                showMessage('Error deleting appointment: ' + result.message, 'danger');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-        }
-    }
-
-    function populateForm(data) {
-        document.getElementById('appointmentId').value = data.id;
-        document.getElementById('patientName').value = data.patient_name;
-        document.getElementById('doctorName').value = data.doctor_name || '';
-        document.getElementById('email').value = data.email;
-        document.getElementById('mobile').value = data.mobile;
-        document.getElementById('appointmentDate').value = data.appointment_date;
-        document.getElementById('appointmentTime').value = data.appointment_time;
-        
-        submitBtn.textContent = 'Update Appointment';
-        submitBtn.classList.remove('btn-primary');
-        submitBtn.classList.add('btn-success');
-        cancelEditBtn.classList.remove('d-none');
-    }
-
-    function resetForm() {
-        appointmentForm.reset();
-        document.getElementById('appointmentId').value = '';
-        submitBtn.textContent = 'Book Appointment';
-        submitBtn.classList.remove('btn-success');
-        submitBtn.classList.add('btn-primary');
-        cancelEditBtn.classList.add('d-none');
-    }
-
-    function validateForm(data) {
-        if (!data.patient_name || !data.doctor_name || !data.email || !data.mobile || !data.appointment_date || !data.appointment_time) {
-            showMessage('All fields are mandatory.', 'warning');
-            return false;
-        }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(data.email)) {
-            showMessage('Please enter a valid email address.', 'warning');
-            return false;
-        }
-        if (!/^[0-9]{10}$/.test(data.mobile)) {
-            showMessage('Mobile number must be exactly 10 digits.', 'warning');
-            return false;
-        }
-        const selectedDate = new Date(data.appointment_date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (selectedDate < today) {
-            showMessage('Appointment date cannot be in the past.', 'warning');
-            return false;
-        }
-
-        const time = data.appointment_time;
-        const hour = parseInt(time.split(':')[0]);
-        if (hour < 9 || hour >= 18) {
-            showMessage('Appointments are only available between 09:00 AM and 06:00 PM.', 'warning');
-            return false;
-        }
-
-        return true;
-    }
-
-    function showMessage(message, type) {
-        messageContainer.innerHTML = `
-            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        `;
-        // Auto-dismiss after 5 seconds
-        setTimeout(() => {
-            const alert = bootstrap.Alert.getOrCreateInstance(messageContainer.firstElementChild);
-            if (alert) alert.close();
-        }, 5000);
-    }
-
-    function highlightRow(id) {
-        const row = document.getElementById(`row-${id}`);
-        if (row) {
-            row.classList.add('highlight-row');
-            setTimeout(() => row.classList.remove('highlight-row'), 3000);
-        }
-    }
+  } catch (err) {
+    showAlert('danger', 'API failure: ' + err.message);
+  } finally {
+    setBtnLoading(false, isUpdate ? 'Update Appointment' : 'Book Appointment');
+  }
 });
+
+// ═════════════════════════════════════════════════════════════════════
+// DELETE (DELETE)
+// ═════════════════════════════════════════════════════════════════════
+async function deleteAppointment(id) {
+  if (!confirm('Are you sure you want to delete this appointment?')) return;
+
+  // Instant DOM update: remove from array immediately (optimistic)
+  const backup = [...appointments];
+  appointments  = appointments.filter(a => a.id !== id);
+  renderTable();
+
+  try {
+    const res = await apiRequest('DELETE', { id: parseInt(id) });
+    if (res.success) {
+      showAlert('success', 'Appointment deleted successfully!');
+    } else {
+      // Rollback on failure
+      appointments = backup;
+      renderTable();
+      showAlert('danger', res.message || 'Delete failed.');
+    }
+  } catch (err) {
+    appointments = backup;
+    renderTable();
+    showAlert('danger', 'API failure: ' + err.message);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// UPDATE STATUS (PATCH)
+// ═════════════════════════════════════════════════════════════════════
+async function updateStatus(id, newStatus) {
+  // Instant DOM update: update local array immediately (optimistic)
+  const appt = appointments.find(a => a.id === id);
+  const prevStatus = appt ? appt.status : null;
+  if (appt) appt.status = newStatus;
+
+  // Re-style the select immediately — no re-render needed
+  const sel = document.querySelector(`#row-${id} select`);
+  if (sel) applyStatusClass(sel, newStatus);
+
+  try {
+    const res = await apiRequest('PATCH', { id: parseInt(id), status: newStatus });
+    if (res.success) {
+      showAlert('success', `Status updated to "${newStatus}"`);
+    } else {
+      // Rollback
+      if (appt) appt.status = prevStatus;
+      if (sel)  applyStatusClass(sel, prevStatus);
+      showAlert('danger', res.message || 'Status update failed.');
+    }
+  } catch (err) {
+    if (appt) appt.status = prevStatus;
+    if (sel)  applyStatusClass(sel, prevStatus);
+    showAlert('danger', 'API failure: ' + err.message);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// EDIT — populate form
+// ═════════════════════════════════════════════════════════════════════
+function editAppointment(appt) {
+  appointmentId.value   = appt.id;
+  patientName.value     = appt.patient_name;
+  emailInput.value      = appt.email;
+  mobileInput.value     = appt.mobile;
+  appointmentDate.value = appt.appointment_date;
+  appointmentTime.value = appt.appointment_time;
+
+  formTitle.textContent     = 'Edit Appointment';
+  submitBtnText.textContent = 'Update Appointment';
+  cancelEditBtn.classList.remove('d-none');
+  submitBtn.classList.remove('btn-primary');
+  submitBtn.classList.add('btn-warning');
+
+  document.getElementById('formCard').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// CANCEL EDIT
+// ═════════════════════════════════════════════════════════════════════
+function cancelEdit() {
+  resetForm();
+  showAlert('info', 'Edit cancelled.');
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// RENDER TABLE — reads from local `appointments[]`
+// ═════════════════════════════════════════════════════════════════════
+function renderTable() {
+  totalCount.textContent = appointments.length;
+
+  if (appointments.length === 0) {
+    tableWrapper.classList.add('d-none');
+    emptyState.classList.remove('d-none');
+    return;
+  }
+
+  emptyState.classList.add('d-none');
+  tableWrapper.classList.remove('d-none');
+
+  appointmentsBody.innerHTML = appointments.map((appt, index) => `
+    <tr id="row-${appt.id}">
+      <td class="fw-semibold text-muted">${index + 1}</td>
+      <td class="fw-semibold">${escHtml(appt.patient_name)}</td>
+      <td>
+        <a href="mailto:${escHtml(appt.email)}" class="text-decoration-none">
+          ${escHtml(appt.email)}
+        </a>
+      </td>
+      <td>${escHtml(appt.mobile)}</td>
+      <td>
+        <span class="badge bg-secondary">
+          <i class="bi bi-calendar3 me-1"></i>${formatDate(appt.appointment_date)}
+        </span>
+      </td>
+      <td>
+        <span class="badge bg-info text-dark">
+          <i class="bi bi-clock me-1"></i>${formatTime(appt.appointment_time)}
+        </span>
+      </td>
+      <td>
+        <select class="form-select form-select-sm ${statusClass(appt.status)}"
+                onchange="updateStatus(${appt.id}, this.value)">
+          <option value="Pending"   ${appt.status === 'Pending'   ? 'selected' : ''}>⏳ Pending</option>
+          <option value="Confirmed" ${appt.status === 'Confirmed' ? 'selected' : ''}>✅ Confirmed</option>
+          <option value="Cancelled" ${appt.status === 'Cancelled' ? 'selected' : ''}>❌ Cancelled</option>
+        </select>
+      </td>
+      <td class="text-center">
+        <button class="btn btn-sm btn-outline-warning me-1"
+                onclick='editAppointment(${JSON.stringify(appt)})'
+                title="Edit">
+          <i class="bi bi-pencil-fill"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-danger"
+                onclick="deleteAppointment(${appt.id})"
+                title="Delete">
+          <i class="bi bi-trash-fill"></i>
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// CORE API REQUEST
+// ═════════════════════════════════════════════════════════════════════
+async function apiRequest(method, body = null) {
+  const options = {
+    method,
+    headers: { 'Content-Type': 'application/json' }
+  };
+  if (body !== null && method !== 'GET') {
+    options.body = JSON.stringify(body);
+  }
+  const res  = await fetch(API_URL, options);
+  const json = await res.json();
+  if (res.status >= 500) throw new Error(json.message || `Server error ${res.status}`);
+  return json;
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// VALIDATION
+// ═════════════════════════════════════════════════════════════════════
+function validateClient(data) {
+  const errors = [];
+
+  if (!data.patient_name.trim()) {
+    errors.push({ field: 'patientName', errId: 'nameError', msg: 'Patient name is required.' });
+  } else if (!/^[a-zA-Z\s]{2,100}$/.test(data.patient_name.trim())) {
+    errors.push({ field: 'patientName', errId: 'nameError', msg: 'Name must be 2–100 alphabetic characters.' });
+  }
+
+  if (!data.email.trim()) {
+    errors.push({ field: 'email', errId: 'emailError', msg: 'Email is required.' });
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) {
+    errors.push({ field: 'email', errId: 'emailError', msg: 'Enter a valid email address.' });
+  }
+
+  if (!data.mobile.trim()) {
+    errors.push({ field: 'mobile', errId: 'mobileError', msg: 'Mobile number is required.' });
+  } else if (!/^\+?[0-9]{10,15}$/.test(data.mobile.trim())) {
+    errors.push({ field: 'mobile', errId: 'mobileError', msg: 'Mobile must be 10–15 digits.' });
+  }
+
+  if (!data.appointment_date) {
+    errors.push({ field: 'appointmentDate', errId: 'dateError', msg: 'Appointment date is required.' });
+  } else if (data.appointment_date < new Date().toISOString().split('T')[0]) {
+    errors.push({ field: 'appointmentDate', errId: 'dateError', msg: 'Date cannot be in the past.' });
+  }
+
+  if (!data.appointment_time) {
+    errors.push({ field: 'appointmentTime', errId: 'timeError', msg: 'Appointment time is required.' });
+  }
+
+  return errors;
+}
+
+function showClientErrors(errors) {
+  errors.forEach(({ field, errId, msg }) => {
+    const input = document.getElementById(field);
+    const errEl = document.getElementById(errId);
+    if (input) input.classList.add('is-invalid');
+    if (errEl) errEl.textContent = msg;
+  });
+}
+
+function clearValidation() {
+  ['patientName', 'email', 'mobile', 'appointmentDate', 'appointmentTime'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('is-invalid', 'is-valid');
+  });
+  ['nameError', 'emailError', 'mobileError', 'dateError', 'timeError'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '';
+  });
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═════════════════════════════════════════════════════════════════════
+function collectFormData() {
+  return {
+    patient_name     : patientName.value,
+    email            : emailInput.value,
+    mobile           : mobileInput.value,
+    appointment_date : appointmentDate.value,
+    appointment_time : appointmentTime.value
+  };
+}
+
+function resetForm() {
+  form.reset();
+  appointmentId.value   = '';
+  clearValidation();
+  formTitle.textContent     = 'Book New Appointment';
+  submitBtnText.textContent = 'Book Appointment';
+  cancelEditBtn.classList.add('d-none');
+  submitBtn.classList.remove('btn-warning');
+  submitBtn.classList.add('btn-primary');
+}
+
+function setBtnLoading(loading, text) {
+  submitBtn.disabled        = loading;
+  submitBtnText.textContent = text;
+  const icon = submitBtn.querySelector('i');
+  if (icon) icon.className  = loading ? 'bi bi-hourglass-split me-2' : 'bi bi-check-circle me-2';
+}
+
+function showLoader(show) {
+  tableLoader.classList.toggle('d-none', !show);
+  if (show) {
+    tableWrapper.classList.add('d-none');
+    emptyState.classList.add('d-none');
+  }
+}
+
+function showAlert(type, message) {
+  const alertBox  = document.getElementById('alertBox');
+  const alertMsg  = document.getElementById('alertMsg');
+  const alertIcon = document.getElementById('alertIcon');
+  const iconMap   = {
+    success : 'bi-check-circle-fill',
+    danger  : 'bi-exclamation-triangle-fill',
+    info    : 'bi-info-circle-fill',
+    warning : 'bi-exclamation-circle-fill'
+  };
+  alertBox.className      = `alert alert-${type} alert-dismissible fade show mb-4`;
+  alertIcon.className     = `bi ${iconMap[type] || 'bi-info-circle-fill'} me-2`;
+  alertMsg.textContent    = message;
+  alertBox.classList.remove('d-none');
+  setTimeout(() => {
+    try { bootstrap.Alert.getOrCreateInstance(alertBox).close(); } catch (_) {}
+  }, 4000);
+}
+
+function highlightRow(id) {
+  // Wait one tick for the row to appear in the DOM after renderTable()
+  setTimeout(() => {
+    const row = document.getElementById(`row-${id}`);
+    if (!row) return;
+    row.classList.add('table-success');
+    setTimeout(() => row.classList.remove('table-success'), 1800);
+  }, 50);
+}
+
+function statusClass(status) {
+  if (status === 'Confirmed') return 'text-success border-success';
+  if (status === 'Cancelled') return 'text-danger border-danger';
+  return 'text-warning border-warning';
+}
+
+function applyStatusClass(sel, status) {
+  sel.className = `form-select form-select-sm ${statusClass(status)}`;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  return new Date(dateStr + 'T00:00:00')
+    .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatTime(timeStr) {
+  if (!timeStr) return '—';
+  const [h, m] = timeStr.split(':');
+  const hour   = parseInt(h, 10);
+  return `${hour % 12 || 12}:${m} ${hour >= 12 ? 'PM' : 'AM'}`;
+}
+
+function escHtml(str) {
+  const div = document.createElement('div');
+  div.appendChild(document.createTextNode(String(str)));
+  return div.innerHTML;
+}

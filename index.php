@@ -1,121 +1,170 @@
-<?php
-require_once 'config.php';
-
-?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ajax Healthcare - Patient Appointment Management</title>
-   
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-    <style>
-        .highlight-row {
-            animation: highlightFade 3s ease-in-out;
-        }
-        @keyframes highlightFade {
-            0% { background-color: #d1e7dd; }
-            100% { background-color: transparent; }
-        }
-        .card { border: none; border-radius: 12px; overflow: hidden; }
-        .btn { border-radius: 8px; transition: all 0.3s ease; }
-        .table thead th { border-top: none; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClinicCare — Appointment Management</title>
+
+  <!-- Bootstrap 5 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
 </head>
 <body class="bg-light">
-    <div class="container py-5">
-        <div class="row justify-content-center">
-            <div class="col-md-10">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center py-3">
-                        <h4 class="mb-0">Patient Appointment Form</h4>
-                        <i class="bi bi-calendar-plus fs-4"></i>
-                    </div>
-                    <div class="card-body p-4">
-                        <div id="messageContainer"></div>
-                        <form id="appointmentForm">
-                            <input type="hidden" id="appointmentId" name="id">
-                            <div class="row g-3">
-                                <div class="col-md-4">
-                                    <label for="patientName" class="form-label">Patient Name</label>
-                                    <input type="text" class="form-control" id="patientName" name="patient_name" required>
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="doctorName" class="form-label">Select Doctor</label>
-                                    <select class="form-select" id="doctorName" name="doctor_name" required>
-                                        <option value="" disabled selected>Choose a doctor</option>
-                                        <option value="Dr. Smith">Dr. Smith (General Physician)</option>
-                                        <option value="Dr. Johnson">Dr. Johnson (Cardiologist)</option>
-                                        <option value="Dr. Williams">Dr. Williams (Pediatrician)</option>
-                                        <option value="Dr. Brown">Dr. Brown (Dermatologist)</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="email" class="form-label">Email</label>
-                                    <input type="email" class="form-control" id="email" name="email" required>
-                                </div>
-                                <div class="col-md-6">
-                                    <label for="mobile" class="form-label">Mobile</label>
-                                    <input type="text" class="form-control" id="mobile" name="mobile" required>
-                                </div>
-                                <div class="col-md-3">
-                                    <label for="appointmentDate" class="form-label">Appointment Date</label>
-                                    <input type="date" class="form-control" id="appointmentDate" name="appointment_date" required>
-                                </div>
-                                <div class="col-md-3">
-                                    <label for="appointmentTime" class="form-label">Appointment Time</label>
-                                    <input type="time" class="form-control" id="appointmentTime" name="appointment_time" required>
-                                </div>
-                                <div class="col-12 text-end">
-                                    <button type="submit" id="submitBtn" class="btn btn-primary px-4">Book Appointment</button>
-                                    <button type="button" id="cancelEditBtn" class="btn btn-secondary px-4 d-none">Cancel Edit</button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                </div>
 
-                <div class="card shadow-sm">
-                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                        <h4 class="mb-0">Appointment List</h4>
-                        <div>
-                            <button id="refreshBtn" class="btn btn-sm btn-outline-light">Refresh</button>
-                        </div>
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Patient Name</th>
-                                        <th>Doctor</th>
-                                        <th>Email</th>
-                                        <th>Mobile</th>
-                                        <th>Date</th>
-                                        <th>Time</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="appointmentTableBody">
-                                    <!-- Appointments will be loaded here via AJAX -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+<!-- ══ Top Bar ══════════════════════════════════ -->
+<nav class="navbar navbar-dark bg-primary mb-4 shadow-sm">
+  <div class="container">
+    <div class="d-flex align-items-center gap-3">
+      <i class="bi bi-hospital fs-2 text-white"></i>
+      <div>
+        <span class="navbar-brand fw-bold fs-4 mb-0">ClinicCare</span>
+        <p class="text-white-50 mb-0 small">Patient Appointment Management System</p>
+      </div>
     </div>
+  </div>
+</nav>
 
-    <!-- Bootstrap JS and Popper -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Custom JS -->
-    <script src="app.js"></script>
+<!-- ══ Main Container ═══════════════════════════ -->
+<div class="container pb-5">
+
+  <!-- Alert -->
+  <div id="alertBox" class="alert alert-dismissible fade show mb-4 d-none" role="alert">
+    <i id="alertIcon" class="bi me-2"></i>
+    <span id="alertMsg"></span>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+
+  <!-- ── Appointment Form Card ─────────────────── -->
+  <div class="card mb-4 shadow-sm border-0" id="formCard">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+      <span class="fw-semibold">
+        <i class="bi bi-calendar-plus me-2"></i>
+        <span id="formTitle">Book New Appointment</span>
+      </span>
+      <button class="btn btn-sm btn-outline-light d-none" id="cancelEditBtn" onclick="cancelEdit()">
+        <i class="bi bi-x-circle me-1"></i>Cancel Edit
+      </button>
+    </div>
+    <div class="card-body p-4">
+      <form id="appointmentForm" novalidate>
+        <input type="hidden" id="appointmentId" />
+
+        <div class="row g-3">
+          <!-- Patient Name -->
+          <div class="col-md-6">
+            <label for="patientName" class="form-label fw-medium">
+              <i class="bi bi-person me-1 text-primary"></i>Patient Name <span class="text-danger">*</span>
+            </label>
+            <input type="text" class="form-control" id="patientName"
+                   placeholder="e.g. Ravi Kumar" maxlength="100" />
+            <div class="invalid-feedback" id="nameError"></div>
+          </div>
+
+          <!-- Email -->
+          <div class="col-md-6">
+            <label for="email" class="form-label fw-medium">
+              <i class="bi bi-envelope me-1 text-primary"></i>Email Address <span class="text-danger">*</span>
+            </label>
+            <input type="email" class="form-control" id="email"
+                   placeholder="e.g. ravi@email.com" maxlength="100" />
+            <div class="invalid-feedback" id="emailError"></div>
+          </div>
+
+          <!-- Mobile -->
+          <div class="col-md-4">
+            <label for="mobile" class="form-label fw-medium">
+              <i class="bi bi-phone me-1 text-primary"></i>Mobile Number <span class="text-danger">*</span>
+            </label>
+            <input type="tel" class="form-control" id="mobile"
+                   placeholder="e.g. 9876543210" maxlength="15" />
+            <div class="invalid-feedback" id="mobileError"></div>
+          </div>
+
+          <!-- Date -->
+          <div class="col-md-4">
+            <label for="appointmentDate" class="form-label fw-medium">
+              <i class="bi bi-calendar3 me-1 text-primary"></i>Appointment Date <span class="text-danger">*</span>
+            </label>
+            <input type="date" class="form-control" id="appointmentDate" />
+            <div class="invalid-feedback" id="dateError"></div>
+          </div>
+
+          <!-- Time -->
+          <div class="col-md-4">
+            <label for="appointmentTime" class="form-label fw-medium">
+              <i class="bi bi-clock me-1 text-primary"></i>Appointment Time <span class="text-danger">*</span>
+            </label>
+            <input type="time" class="form-control" id="appointmentTime" />
+            <div class="invalid-feedback" id="timeError"></div>
+          </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="mt-4 d-flex gap-2">
+          <button type="submit" class="btn btn-primary px-4" id="submitBtn">
+            <i class="bi bi-check-circle me-2"></i><span id="submitBtnText">Book Appointment</span>
+          </button>
+          <button type="button" class="btn btn-outline-secondary px-4" onclick="resetForm()">
+            <i class="bi bi-arrow-counterclockwise me-2"></i>Reset
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Appointments Table Card ───────────────── -->
+  <div class="card shadow-sm border-0" id="tableCard">
+    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+      <span class="fw-semibold">
+        <i class="bi bi-table me-2"></i>All Appointments
+        <span class="badge bg-light text-dark ms-2" id="totalCount">0</span>
+      </span>
+      <button class="btn btn-sm btn-outline-light" onclick="loadAppointments()">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+      </button>
+    </div>
+    <div class="card-body p-0">
+
+      <!-- Loader -->
+      <div id="tableLoader" class="text-center py-5 d-none">
+        <div class="spinner-border text-success" role="status"></div>
+        <p class="mt-2 text-muted small">Loading appointments…</p>
+      </div>
+
+      <!-- Empty state -->
+      <div id="emptyState" class="text-center py-5 d-none">
+        <i class="bi bi-calendar-x fs-1 text-muted"></i>
+        <p class="mt-2 text-muted">No appointments found. Book your first appointment above.</p>
+      </div>
+
+      <!-- Table -->
+      <div class="table-responsive d-none" id="tableWrapper">
+        <table class="table table-hover table-bordered align-middle mb-0" id="appointmentsTable">
+          <thead class="table-dark">
+            <tr>
+              <th>#</th>
+              <th><i class="bi bi-person me-1"></i>Patient</th>
+              <th><i class="bi bi-envelope me-1"></i>Email</th>
+              <th><i class="bi bi-phone me-1"></i>Mobile</th>
+              <th><i class="bi bi-calendar3 me-1"></i>Date</th>
+              <th><i class="bi bi-clock me-1"></i>Time</th>
+              <th><i class="bi bi-flag me-1"></i>Status</th>
+              <th class="text-center"><i class="bi bi-gear me-1"></i>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="appointmentsBody"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- Bootstrap 5 JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- App JS -->
+<script src="app.js"></script>
 </body>
 </html>
