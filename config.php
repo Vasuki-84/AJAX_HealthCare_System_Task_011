@@ -11,11 +11,16 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 
 try {
-    // Create connection with specified port
-    $conn = new mysqli($host, $user, $pass, $dbname, $port);
-} catch (mysqli_sql_exception $e) {    // $e - store the exception object that is thrown when a connection error occurs, and we can use it to get the error message using $e->getMessage()
-    header("Content-Type: application/json");
-    die(json_encode(["status" => "error", "message" => "Database Connection Failed: " . $e->getMessage()]));  // $e->getMessage() -Exception object la irukka actual error message retrieve pannudhu.
+    // Try connection with port 3308 first
+    $conn = new mysqli($host, $user, $pass, $dbname, 3308);
+} catch (mysqli_sql_exception $e) {
+    try {
+        // Fallback to default port 3306 if 3308 fails
+        $conn = new mysqli($host, $user, $pass, $dbname, 3306);
+    } catch (mysqli_sql_exception $e2) {
+        header("Content-Type: application/json");
+        die(json_encode(["status" => "error", "message" => "Database Connection Failed: " . $e2->getMessage()]));
+    }
 }
 
 ?>

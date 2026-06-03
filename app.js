@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Basic validation on frontend as well
         if (!validateForm(data)) return;
 
+        console.log('Submitting data:', data);
         try {
             const response = await fetch('api.php', {
                 method: 'POST',
@@ -29,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(data)
             });
             const result = await response.json();
+            console.log('Response from API:', result);
             
             if (result.status === 'success') {
                 showMessage(result.message, 'success');
@@ -54,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('api.php');
             const result = await response.json();
+            console.log('Loaded appointments:', result);
             
             if (Array.isArray(result)) {
                 renderTable(result);

@@ -6,7 +6,25 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 // Auto-update database schema if needed
 try {
-    $conn->query("SELECT doctor_name FROM appointments LIMIT 1");
+    // Check if table exists
+    $result = $conn->query("SHOW TABLES LIKE 'appointments'");
+    if ($result->num_rows == 0) {
+        // Create table if missing
+        $conn->query("CREATE TABLE appointments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            patient_name VARCHAR(100) NOT NULL,
+            doctor_name VARCHAR(100) NOT NULL,
+            email VARCHAR(100) NOT NULL,
+            mobile VARCHAR(20) NOT NULL,
+            appointment_date DATE NOT NULL,
+            appointment_time TIME NOT NULL,
+            status ENUM('Pending', 'Confirmed', 'Cancelled') DEFAULT 'Pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )");
+    } else {
+        // Check for missing doctor_name column
+        $conn->query("SELECT doctor_name FROM appointments LIMIT 1");
+    }
 } catch (Exception $e) {
     if (strpos($e->getMessage(), "Unknown column 'doctor_name'") !== false) {
         $conn->query("ALTER TABLE appointments ADD COLUMN doctor_name VARCHAR(100) AFTER patient_name");
