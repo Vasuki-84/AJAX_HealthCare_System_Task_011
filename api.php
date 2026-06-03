@@ -46,8 +46,9 @@ function handleGet($conn) {
 }
 
 function handleCreate($conn, $data) {
-    if (!validate($data)) {
-        echo json_encode(["status" => "error", "message" => "Validation failed"]);
+    $validationResult = validate($data);
+    if ($validationResult !== true) {
+        echo json_encode(["status" => "error", "message" => $validationResult]);
         return;
     }
 
@@ -79,7 +80,11 @@ function handleCreate($conn, $data) {
     $stmt->bind_param("ssssss", $data['patient_name'], $data['doctor_name'], $data['email'], $data['mobile'], $data['appointment_date'], $data['appointment_time']);
 
     if ($stmt->execute()) {
-        echo json_encode(["status" => "success", "message" => "Appointment booked successfully"]);
+        echo json_encode([
+            "status" => "success", 
+            "message" => "Appointment booked successfully",
+            "id" => $stmt->insert_id
+        ]);
     } else {
         echo json_encode(["status" => "error", "message" => "Error: " . $stmt->error]);
     }
@@ -87,8 +92,9 @@ function handleCreate($conn, $data) {
 }
 
 function handleUpdate($conn, $data) {
-    if (!validate($data)) {
-        echo json_encode(["status" => "error", "message" => "Validation failed"]);
+    $validationResult = validate($data);
+    if ($validationResult !== true) {
+        echo json_encode(["status" => "error", "message" => $validationResult]);
         return;
     }
 
@@ -149,43 +155,27 @@ function handleDelete($conn, $data) {
 }
 
 function validate($data) {
-    if (empty($data['patient_name']) || empty($data['doctor_name']) || empty($data['email']) || empty($data['mobile']) || empty($data['appointment_date']) || empty($data['appointment_time'])) {
-        return false;
-    }
-     if (empty($data['patient_name'])) {
-        return "Patient name is required";
-    }
+    if (empty($data['patient_name'])) return "Patient name is required";
+    if (empty($data['doctor_name'])) return "Doctor name is required";
+    if (empty($data['email'])) return "Email is required";
+    if (empty($data['mobile'])) return "Mobile number is required";
+    if (empty($data['appointment_date'])) return "Appointment date is required";
+    if (empty($data['appointment_time'])) return "Appointment time is required";
 
-    if (empty($data['doctor_name'])) {
-        return "Doctor name is required";
-    }
-
-    if (empty($data['email'])) {
-        return "Email is required";
-    }
 
     if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
         return "Invalid email format";
     }
 
-    if (empty($data['mobile'])) {
-        return "Mobile number is required";
-    }
 
     if (!preg_match('/^[0-9]{10}$/', $data['mobile'])) {
         return "Mobile number must contain exactly 10 digits";
     }
 
-    if (empty($data['appointment_date'])) {
-        return "Appointment date is required";
-    }
       if ($data['appointment_date'] < date('Y-m-d')) {
         return "Appointment date cannot be in the past";
     }
 
-    if (empty($data['appointment_time'])) {
-        return "Appointment time is required";
-    }
 
     // Accept 12-hour format with AM/PM, e.g., "02:30 PM"
     $timeObj = DateTime::createFromFormat('h:i A', $data['appointment_time']);

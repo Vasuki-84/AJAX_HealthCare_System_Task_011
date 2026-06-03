@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (result.status === 'success') {
                 showMessage(result.message, 'success');
-                lastUpdatedId = data.id || null; // Will be set after reload for new items
+                lastUpdatedId = data.id || result.id || null; // Use data.id (update) or result.id (create)
                 resetForm();
                 loadAppointments();
             } else {
@@ -196,31 +196,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function validateForm(data) {
         if (!data.patient_name || !data.doctor_name || !data.email || !data.mobile || !data.appointment_date || !data.appointment_time) {
-            alert('All fields are mandatory.');
+            showMessage('All fields are mandatory.', 'warning');
             return false;
         }
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(data.email)) {
-            alert('Please enter a valid email address.');
+            showMessage('Please enter a valid email address.', 'warning');
             return false;
         }
-        if (!/^[0-9]{10,15}$/.test(data.mobile)) {
-            alert('Mobile number must be between 10 and 15 digits.');
+        if (!/^[0-9]{10}$/.test(data.mobile)) {
+            showMessage('Mobile number must be exactly 10 digits.', 'warning');
             return false;
         }
         const selectedDate = new Date(data.appointment_date);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         if (selectedDate < today) {
-            alert('Appointment date cannot be in the past.');
+            showMessage('Appointment date cannot be in the past.', 'warning');
             return false;
         }
 
-        // Time slot validation (09:00 - 18:00)
         const time = data.appointment_time;
         const hour = parseInt(time.split(':')[0]);
         if (hour < 9 || hour >= 18) {
-            alert('Appointments are only available between 09:00 AM and 06:00 PM.');
+            showMessage('Appointments are only available between 09:00 AM and 06:00 PM.', 'warning');
             return false;
         }
 
