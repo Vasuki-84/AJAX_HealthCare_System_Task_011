@@ -1,35 +1,21 @@
 <?php
+// Store the required values for database connection
 $host = "localhost";
 $user = "root";
 $pass = "";
 $dbname = "clinic_db";
-$port = 3308; // Added port as per your reference
+$port = 3308; 
 
-// Set mysqli to throw exceptions
+// Set mysqli to throw exceptions when errors occur in MYSQL operations, which allows us to catch them and return JSON responses without this it shows only warning
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// CSRF token will be generated upon successful login
-function generate_csrf_token() {
-    if (empty($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    }
-    return $_SESSION['csrf_token'];
-}
-
-function isLoggedIn() {
-    return isset($_SESSION['user_id']);
-}
 
 try {
     // Create connection with specified port
     $conn = new mysqli($host, $user, $pass, $dbname, $port);
-} catch (mysqli_sql_exception $e) {
+} catch (mysqli_sql_exception $e) {    // $e - store the exception object that is thrown when a connection error occurs, and we can use it to get the error message using $e->getMessage()
     header("Content-Type: application/json");
-    die(json_encode(["status" => "error", "message" => "Database Connection Failed: " . $e->getMessage()]));
+    die(json_encode(["status" => "error", "message" => "Database Connection Failed: " . $e->getMessage()]));  // $e->getMessage() -Exception object la irukka actual error message retrieve pannudhu.
 }
 
 ?>

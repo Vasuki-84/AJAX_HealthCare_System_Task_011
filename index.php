@@ -1,9 +1,6 @@
 <?php
 require_once 'config.php';
-if (!isLoggedIn()) {
-    header("Location: login.php");
-    exit;
-}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -11,20 +8,35 @@ if (!isLoggedIn()) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ajax Healthcare - Patient Appointment Management</title>
-    <!-- CSRF Token -->
-    <meta name="csrf-token" content="<?php echo $_SESSION['csrf_token'] ?? ''; ?>">
+   
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .highlight-row {
+            animation: highlightFade 3s ease-in-out;
+        }
+        @keyframes highlightFade {
+            0% { background-color: #d1e7dd; }
+            100% { background-color: transparent; }
+        }
+        .card { border: none; border-radius: 12px; overflow: hidden; }
+        .btn { border-radius: 8px; transition: all 0.3s ease; }
+        .table thead th { border-top: none; }
+    </style>
 </head>
 <body class="bg-light">
     <div class="container py-5">
         <div class="row justify-content-center">
             <div class="col-md-10">
                 <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center py-3">
                         <h4 class="mb-0">Patient Appointment Form</h4>
+                        <i class="bi bi-calendar-plus fs-4"></i>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body p-4">
+                        <div id="messageContainer"></div>
                         <form id="appointmentForm">
                             <input type="hidden" id="appointmentId" name="id">
                             <div class="row g-3">
@@ -71,8 +83,7 @@ if (!isLoggedIn()) {
                     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
                         <h4 class="mb-0">Appointment List</h4>
                         <div>
-                            <button id="refreshBtn" class="btn btn-sm btn-outline-light me-2">Refresh</button>
-                            <button id="logoutBtn" class="btn btn-sm btn-danger">Logout</button>
+                            <button id="refreshBtn" class="btn btn-sm btn-outline-light">Refresh</button>
                         </div>
                     </div>
                     <div class="card-body p-0">

@@ -4,22 +4,8 @@ require_once 'config.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 
-// Authentication check
-if (!isLoggedIn()) {
-    echo json_encode(["status" => "error", "message" => "Unauthorized access. Please login."]);
-    exit;
-}
 
-// CSRF Protection for state-changing methods
-if (in_array($method, ['POST', 'PUT', 'DELETE'])) {
-    $headers = getallheaders();
-    $requestToken = $headers['X-CSRF-TOKEN'] ?? '';
-    if (empty($requestToken) || $requestToken !== ($_SESSION['csrf_token'] ?? '')) {
-        echo json_encode(["status" => "error", "message" => "Invalid CSRF token"]);
-        exit;
-    }
-}
-
+// API handles patient CRUD operations
 switch ($method) {
     case 'GET':
         handleGet($conn);
@@ -166,22 +152,55 @@ function validate($data) {
     if (empty($data['patient_name']) || empty($data['doctor_name']) || empty($data['email']) || empty($data['mobile']) || empty($data['appointment_date']) || empty($data['appointment_time'])) {
         return false;
     }
-    if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-        return false;
-    }
-    if (!preg_match('/^[0-9]{10,15}$/', $data['mobile'])) {
-        return false;
-    }
-    $today = date("Y-m-d");
-    if ($data['appointment_date'] < $today) {
-        return false;
+     if (empty($data['patient_name'])) {
+        return "Patient name is required";
     }
 
-    // Time slot validation (09:00 - 18:00)
-    $hour = (int)date("H", strtotime($data['appointment_time']));
-    if ($hour < 9 || $hour >= 18) {
-        return false;
+    if (empty($data['doctor_name'])) {
+        return "Doctor name is required";
     }
+
+    if (empty($data['email'])) {
+        return "Email is required";
+    }
+
+    if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+        return "Invalid email format";
+    }
+
+    if (empty($data['mobile'])) {
+        return "Mobile number is required";
+    }
+
+    if (!preg_match('/^[0-9]{10}$/', $data['mobile'])) {
+        return "Mobile number must contain exactly 10 digits";
+    }
+
+    if (empty($data['appointment_date'])) {
+        return "Appointment date is required";
+    }
+      if ($data['appointment_date'] < date('Y-m-d')) {
+        return "Appointment date cannot be in the past";
+    }
+
+    if (empty($data['appointment_time'])) {
+        return "Appointment time is required";
+    }
+
+    // Accept 12-hour format with AM/PM, e.g., "02:30 PM"
+    $timeObj = DateTime::createFromFormat('h:i A', $data['appointment_time']);
+    if ($timeObj === false) {
+        // Fallback to 24-hour format
+        $timeObj = DateTime::createFromFormat('H:i', $data['appointment_time']);
+        if ($timeObj === false) {
+            return "Invalid appointment time format. Use HH:MM (24h) or HH:MM AM/PM (12h).";
+        }
+    }
+    $hour = (int) $timeObj->format('H');
+    if ($hour < 9 || $hour >= 18) {
+        return "Appointment time must be between 09:00 and 18:00";
+    }
+
 
     return true;
 }

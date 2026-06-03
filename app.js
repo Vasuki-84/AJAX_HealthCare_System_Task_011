@@ -4,26 +4,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const submitBtn = document.getElementById('submitBtn');
     const cancelEditBtn = document.getElementById('cancelEditBtn');
     const refreshBtn = document.getElementById('refreshBtn');
-    const logoutBtn = document.getElementById('logoutBtn');
-
-    // Logout
-    logoutBtn.addEventListener('click', async () => {
-        if (confirm('Are you sure you want to logout?')) {
-            try {
-                const response = await fetch('auth.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'logout' })
-                });
-                const result = await response.json();
-                if (result.status === 'success') {
-                    window.location.href = 'login.php';
-                }
-            } catch (error) {
-                console.error('Logout failed:', error);
-            }
-        }
-    });
+    const messageContainer = document.getElementById('messageContainer');
+    let lastUpdatedId = null;
 
     // Initial Load
     loadAppointments();
@@ -32,7 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
     appointmentForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         const formData = new FormData(appointmentForm);
         const data = Object.fromEntries(formData.entries());
         
@@ -43,23 +24,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('api.php', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(data)
             });
             const result = await response.json();
             
             if (result.status === 'success') {
-                alert(result.message);
+                showMessage(result.message, 'success');
+                lastUpdatedId = data.id || null; // Will be set after reload for new items
                 resetForm();
                 loadAppointments();
             } else {
-                alert('Error: ' + result.message);
+                showMessage(result.message, 'danger');
             }
         } catch (error) {
             console.error('Error:', error);
-            alert('An unexpected error occurred.');
+            showMessage('An unexpected error occurred.', 'danger');
         }
     });
 
@@ -74,8 +55,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('api.php');
             const appointments = await response.json();
             renderTable(appointments);
+            if (lastUpdatedId) {
+                highlightRow(lastUpdatedId);
+                lastUpdatedId = null;
+            }
         } catch (error) {
             console.error('Error loading appointments:', error);
+            showMessage('Failed to load appointments.', 'danger');
         }
     }
 
@@ -88,10 +74,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         appointments.forEach(app => {
             const tr = document.createElement('tr');
+            tr.id = `row-${app.id}`;
             tr.innerHTML = `
-                <td>${app.id}</td>
+                <td><strong>#${app.id}</strong></td>
                 <td>${app.patient_name}</td>
-                <td>${app.doctor_name || 'N/A'}</td>
+                <td><span class="badge bg-light text-dark border">${app.doctor_name || 'N/A'}</span></td>
                 <td>${app.email}</td>
                 <td>${app.mobile}</td>
                 <td>${app.appointment_date}</td>
@@ -104,8 +91,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     </select>
                 </td>
                 <td>
-                    <button class="btn btn-sm btn-info edit-btn" data-id="${app.id}" data-patient_name="${app.patient_name}" data-doctor_name="${app.doctor_name}" data-email="${app.email}" data-mobile="${app.mobile}" data-appointment_date="${app.appointment_date}" data-appointment_time="${app.appointment_time}">Edit</button>
-                    <button class="btn btn-sm btn-danger delete-btn" data-id="${app.id}">Delete</button>
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-outline-info edit-btn" data-id="${app.id}" data-patient_name="${app.patient_name}" data-doctor_name="${app.doctor_name}" data-email="${app.email}" data-mobile="${app.mobile}" data-appointment_date="${app.appointment_date}" data-appointment_time="${app.appointment_time}">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${app.id}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
                 </td>
             `;
             appointmentTableBody.appendChild(tr);
@@ -142,15 +135,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('api.php', {
                 method: 'PUT',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ id, status, status_only: true })
             });
             const result = await response.json();
-            if (result.status !== 'success') {
-                alert('Error updating status: ' + result.message);
-                loadAppointments(); // Reload to reset dropdown to correct state
+            if (result.status === 'success') {
+                highlightRow(id);
+            } else {
+                showMessage('Error updating status: ' + result.message, 'danger');
+                loadAppointments(); 
             }
         } catch (error) {
             console.error('Error:', error);
@@ -162,16 +156,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('api.php', {
                 method: 'DELETE',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ id })
             });
             const result = await response.json();
             if (result.status === 'success') {
+                showMessage('Appointment deleted successfully', 'success');
                 loadAppointments();
             } else {
-                alert('Error deleting appointment: ' + result.message);
+                showMessage('Error deleting appointment: ' + result.message, 'danger');
             }
         } catch (error) {
             console.error('Error:', error);
@@ -231,5 +225,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         return true;
+    }
+
+    function showMessage(message, type) {
+        messageContainer.innerHTML = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `;
+        // Auto-dismiss after 5 seconds
+        setTimeout(() => {
+            const alert = bootstrap.Alert.getOrCreateInstance(messageContainer.firstElementChild);
+            if (alert) alert.close();
+        }, 5000);
+    }
+
+    function highlightRow(id) {
+        const row = document.getElementById(`row-${id}`);
+        if (row) {
+            row.classList.add('highlight-row');
+            setTimeout(() => row.classList.remove('highlight-row'), 3000);
+        }
     }
 });
