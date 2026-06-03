@@ -33,34 +33,39 @@ try {
 
 
 // API handles patient CRUD operations
-switch ($method) {
-    case 'GET':
-        handleGet($conn);
-        break;
-    case 'POST':
-        $data = json_decode(file_get_contents("php://input"), true);
-        if (isset($data['id']) && !empty($data['id'])) {
-            handleUpdate($conn, $data);
-        } else {
-            handleCreate($conn, $data);
-        }
-        break;
-    case 'PUT':
-        $data = json_decode(file_get_contents("php://input"), true);
-        if (isset($data['status_only']) && $data['status_only'] === true) {
-            handleStatusUpdate($conn, $data);
-        } else {
-            handleUpdate($conn, $data);
-        }
-        break;
-    case 'DELETE':
-        $data = json_decode(file_get_contents("php://input"), true);
-        handleDelete($conn, $data);
-        break;
-    default:
-        echo json_encode(["status" => "error", "message" => "Method not allowed"]);
-        break;
+try {
+    switch ($method) {
+        case 'GET':
+            handleGet($conn);
+            break;
+        case 'POST':
+            $data = json_decode(file_get_contents("php://input"), true);
+            if (isset($data['id']) && !empty($data['id'])) {
+                handleUpdate($conn, $data);
+            } else {
+                handleCreate($conn, $data);
+            }
+            break;
+        case 'PUT':
+            $data = json_decode(file_get_contents("php://input"), true);
+            if (isset($data['status_only']) && $data['status_only'] === true) {
+                handleStatusUpdate($conn, $data);
+            } else {
+                handleUpdate($conn, $data);
+            }
+            break;
+        case 'DELETE':
+            $data = json_decode(file_get_contents("php://input"), true);
+            handleDelete($conn, $data);
+            break;
+        default:
+            echo json_encode(["status" => "error", "message" => "Method not allowed"]);
+            break;
+    }
+} catch (Exception $e) {
+    echo json_encode(["status" => "error", "message" => "API Error: " . $e->getMessage()]);
 }
+
 
 function handleGet($conn) {
     $sql = "SELECT * FROM appointments ORDER BY id DESC";
@@ -221,4 +226,3 @@ function validate($data) {
 
     return true;
 }
-?>

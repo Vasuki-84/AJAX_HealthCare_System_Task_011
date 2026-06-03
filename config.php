@@ -34,5 +34,3 @@ try {
         die(json_encode(["status" => "error", "message" => "Database Connection Failed: " . $e2->getMessage()]));
     }
 }
-
-?>
