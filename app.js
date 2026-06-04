@@ -223,6 +223,7 @@ function cancelEdit() {
 // RENDER TABLE — reads from local `appointments[]`
 // ═════════════════════════════════════════════════════════════════════
 function renderTable() {
+    // console.log("Render called");
   totalCount.textContent = appointments.length;
 
   if (appointments.length === 0) {
@@ -395,6 +396,12 @@ function showAlert(type, message) {
   const alertBox  = document.getElementById('alertBox');
   const alertMsg  = document.getElementById('alertMsg');
   const alertIcon = document.getElementById('alertIcon');
+
+    if (!alertBox || !alertMsg || !alertIcon) {
+    console.error("Alert elements not found");
+    return;
+  }
+    
   const iconMap   = {
     success : 'bi-check-circle-fill',
     danger  : 'bi-exclamation-triangle-fill',
