@@ -1,6 +1,10 @@
 <?php
 // api.php — Handles GET, POST, PUT, PATCH, DELETE for appointments
 
+session_start();
+
+header('Content-Type: application/json');
+
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
@@ -18,6 +22,23 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 // Read raw JSON input (used by POST, PUT, PATCH, DELETE)
 $input = json_decode(file_get_contents('php://input'), true);
+
+if ($method !== 'GET') {
+
+    if (
+        !isset($input['csrf_token']) ||
+        !isset($_SESSION['csrf_token']) ||
+        !hash_equals($_SESSION['csrf_token'], $input['csrf_token'])
+    ) {
+
+        respond(
+            false,
+            'Invalid CSRF Token',
+            null,
+            403
+        );
+    }
+}
 
 switch ($method) {
 

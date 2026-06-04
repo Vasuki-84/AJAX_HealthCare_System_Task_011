@@ -34,8 +34,17 @@ const totalCount       = document.getElementById('totalCount');
 appointmentDate.min = new Date().toISOString().split('T')[0];
 
 // ── On page load: fetch once from server ─────────────────────────────
-document.addEventListener('DOMContentLoaded', loadAppointments);
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadCsrfToken();
+  loadAppointments();
+});
 
+async function loadCsrfToken() {
+  const response = await fetch('csrf.php');
+  const token = await response.text();
+
+  document.getElementById('csrfToken').value = token;
+}
 // ═════════════════════════════════════════════════════════════════════
 // READ — initial load from server (GET)
 // ═════════════════════════════════════════════════════════════════════
@@ -145,7 +154,7 @@ async function deleteAppointment(id) {
   renderTable();
 
   try {
-    const res = await apiRequest('DELETE', { id: parseInt(id) });
+    const res = await apiRequest('DELETE', { id: parseInt(id) , csrf_token: document.getElementById('csrfToken').value});
     if (res.success) {
       showAlert('success', 'Appointment deleted successfully!');
     } else {
@@ -175,7 +184,8 @@ async function updateStatus(id, newStatus) {
   if (sel) applyStatusClass(sel, newStatus);
 
   try {
-    const res = await apiRequest('PATCH', { id: parseInt(id), status: newStatus });
+    const res = await apiRequest('PATCH', { id: parseInt(id), status: newStatus, csrf_token: document.getElementById('csrfToken').value
+ });
     if (res.success) {
       showAlert('success', `Status updated to "${newStatus}"`);
     } else {
@@ -362,7 +372,9 @@ function collectFormData() {
     email            : emailInput.value,
     mobile           : mobileInput.value,
     appointment_date : appointmentDate.value,
-    appointment_time : appointmentTime.value
+    appointment_time : appointmentTime.value,
+    csrf_token       : document.getElementById('csrfToken').value
+
   };
 }
 
